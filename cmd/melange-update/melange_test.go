@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -198,7 +199,7 @@ func TestPatchConfig(t *testing.T) {
 	}
 }
 
-func TestPatchConfigResetsEpoch(t *testing.T) {
+func TestPatchConfigUnquotedVersion(t *testing.T) {
 	data := []byte(`package:
   name: foo
   version: 1.0
@@ -214,6 +215,9 @@ pipeline:
 	if err != nil {
 		t.Fatalf("parseSource() = %v", err)
 	}
+	if src.Epoch != 3 {
+		t.Errorf("parseSource().Epoch = %d, want 3", src.Epoch)
+	}
 	got, err := patchConfig(data, src, "1.1", "def")
 	if err != nil {
 		t.Fatalf("patchConfig() = %v", err)
@@ -221,7 +225,7 @@ pipeline:
 	want := `package:
   name: foo
   version: "1.1"
-  epoch: 0
+  epoch: 3
 pipeline:
   - uses: git-checkout
     with:
@@ -231,6 +235,70 @@ pipeline:
 `
 	if string(got) != want {
 		t.Errorf("patchConfig() =\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSetEpoch(t *testing.T) {
+	data := readFile(t, "testdata/caddy.yaml")
+	got, err := setEpoch(data, 2)
+	if err != nil {
+		t.Fatalf("setEpoch() = %v", err)
+	}
+	want := strings.Replace(string(data), "    epoch: 0\n", "    epoch: 2\n", 1)
+	if string(got) != want {
+		t.Errorf("setEpoch() =\n%s\nwant:\n%s", got, want)
+	}
+
+	src, err := parseSource(got)
+	if err != nil {
+		t.Fatalf("parseSource(patched) = %v", err)
+	}
+	if src.Epoch != 2 {
+		t.Errorf("patched epoch = %d, want 2", src.Epoch)
+	}
+}
+
+func TestParseGoModules(t *testing.T) {
+	for _, tt := range []struct {
+		file string
+		want []goModule
+	}{{
+		file: "testdata/caddy.yaml",
+		want: []goModule{
+			{Path: "github.com/caddy-dns/acmeproxy", Version: "v1.1.1"},
+			{Path: "github.com/pdeslaur/caddy-pocketid", Version: "v0.1.5"},
+		},
+	}, {
+		file: "testdata/dns01proxy.yaml",
+	}, {
+		file: "testdata/anki-sync-server.yaml",
+	}} {
+		t.Run(tt.file, func(t *testing.T) {
+			got := parseGoModules(readFile(t, tt.file))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("parseGoModules() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPatchGoModule(t *testing.T) {
+	data := readFile(t, "testdata/caddy.yaml")
+	m := goModule{Path: "github.com/pdeslaur/caddy-pocketid", Version: "v0.1.5"}
+
+	got, err := patchGoModule(data, m, "v0.2.0")
+	if err != nil {
+		t.Fatalf("patchGoModule() = %v", err)
+	}
+	want := strings.Replace(string(data),
+		"go get github.com/pdeslaur/caddy-pocketid@v0.1.5\n",
+		"go get github.com/pdeslaur/caddy-pocketid@v0.2.0\n", 1)
+	if string(got) != want {
+		t.Errorf("patchGoModule() =\n%s\nwant:\n%s", got, want)
+	}
+
+	if _, err := patchGoModule(data, goModule{Path: "github.com/a/b", Version: "v1.0.0"}, "v1.1.0"); err == nil {
+		t.Error("patchGoModule() of unpinned module succeeded, want error")
 	}
 }
 

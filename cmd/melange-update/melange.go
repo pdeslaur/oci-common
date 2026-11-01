@@ -16,6 +16,7 @@ const versionPlaceholder = "${{package.version}}"
 type source struct {
 	Name    string
 	Version string
+	Epoch   int
 	// Owner and Repo identify the upstream GitHub repository.
 	Owner string
 	Repo  string
@@ -44,6 +45,7 @@ type melangeConfig struct {
 	Package struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version"`
+		Epoch   int    `yaml:"epoch"`
 	} `yaml:"package"`
 	Pipeline []struct {
 		Uses string `yaml:"uses"`
@@ -62,7 +64,7 @@ func parseSource(data []byte) (source, error) {
 		return source{}, fmt.Errorf("parsing melange config: %w", err)
 	}
 
-	s := source{Name: cfg.Package.Name, Version: cfg.Package.Version}
+	s := source{Name: cfg.Package.Name, Version: cfg.Package.Version, Epoch: cfg.Package.Epoch}
 	if s.Name == "" || s.Version == "" {
 		return source{}, fmt.Errorf("package.name and package.version are required")
 	}
@@ -107,20 +109,53 @@ func parseGitHubRepository(u string) (owner, repo string, err error) {
 }
 
 // patchConfig rewrites the package version and expected commit in a melange
-// config and resets the epoch to 0. It edits the text in place rather than
-// re-marshalling so that formatting and comments are preserved.
+// config. Like the other patch functions, it edits the text in place rather
+// than re-marshalling so that formatting and comments are preserved.
 func patchConfig(data []byte, s source, version, commit string) ([]byte, error) {
 	out, err := replaceOnce(data, `version:\s*"?`+regexp.QuoteMeta(s.Version)+`"?`, `version: "`+version+`"`)
 	if err != nil {
 		return nil, fmt.Errorf("patching version: %w", err)
 	}
-	out, err = replaceOnce(out, `epoch:\s*\d+`, "epoch: 0")
-	if err != nil {
-		return nil, fmt.Errorf("patching epoch: %w", err)
-	}
 	out, err = replaceOnce(out, `expected-commit:\s*`+regexp.QuoteMeta(s.ExpectedCommit), "expected-commit: "+commit)
 	if err != nil {
 		return nil, fmt.Errorf("patching expected-commit: %w", err)
+	}
+	return out, nil
+}
+
+// setEpoch rewrites the package epoch in a melange config.
+func setEpoch(data []byte, epoch int) ([]byte, error) {
+	out, err := replaceOnce(data, `epoch:\s*\d+`, "epoch: "+strconv.Itoa(epoch))
+	if err != nil {
+		return nil, fmt.Errorf("patching epoch: %w", err)
+	}
+	return out, nil
+}
+
+// goModule is a Go module pinned in a pipeline step with
+// "go get MODULE@VERSION", e.g. to add a plugin to the upstream source.
+type goModule struct {
+	Path    string
+	Version string
+}
+
+var goGetRe = regexp.MustCompile(`(?m)^[ \t]+go get ([^\s@]+)@(v[^\s]+)[ \t]*$`)
+
+// parseGoModules returns the Go modules pinned with "go get" in a melange
+// config, in the order they appear.
+func parseGoModules(data []byte) []goModule {
+	var mods []goModule
+	for _, m := range goGetRe.FindAllSubmatch(data, -1) {
+		mods = append(mods, goModule{Path: string(m[1]), Version: string(m[2])})
+	}
+	return mods
+}
+
+// patchGoModule rewrites the version of a Go module pinned with "go get".
+func patchGoModule(data []byte, m goModule, version string) ([]byte, error) {
+	out, err := replaceOnce(data, `go get `+regexp.QuoteMeta(m.Path+"@"+m.Version), "go get "+m.Path+"@"+version)
+	if err != nil {
+		return nil, fmt.Errorf("patching %s: %w", m.Path, err)
 	}
 	return out, nil
 }
