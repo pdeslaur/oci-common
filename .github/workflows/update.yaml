@@ -1,7 +1,9 @@
 name: Update
 
-# Bumps the caller's melange.yaml to the latest upstream release and opens a
-# pull request with auto-merge enabled.
+# Bumps the caller's melange.yaml, and the Go modules it pins with "go get", to
+# their latest releases and opens a pull request with auto-merge enabled. All
+# bumps go into a single pull request per repository, which later runs update
+# in place while it is open.
 #
 # The pull request is created with an octo-sts token rather than GITHUB_TOKEN
 # so that it triggers the caller's PR checks. The caller repository must have
@@ -58,15 +60,12 @@ jobs:
               with:
                   token: ${{ steps.octo-sts.outputs.token }}
                   add-paths: melange.yaml
-                  branch: update/${{ steps.update.outputs.package }}-${{ steps.update.outputs.latest }}
+                  branch: update/${{ steps.update.outputs.package }}
                   delete-branch: true
-                  title: "Update ${{ steps.update.outputs.package }} to ${{ steps.update.outputs.tag }}"
-                  commit-message: "melange: update ${{ steps.update.outputs.package }} to ${{ steps.update.outputs.tag }}"
+                  title: ${{ steps.update.outputs.title }}
+                  commit-message: "melange: ${{ steps.update.outputs.title }}"
                   body: |
-                      Automated version bump of ${{ steps.update.outputs.package }} from ${{ steps.update.outputs.current }} to ${{ steps.update.outputs.latest }}.
-
-                      Release notes: ${{ steps.update.outputs.release-url }}
-
+                      ${{ steps.update.outputs.body }}
                       Auto-merge is enabled; this will merge once the build checks pass.
 
             - name: Enable auto-merge

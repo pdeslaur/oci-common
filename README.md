@@ -38,9 +38,10 @@ cosign verify ghcr.io/pdeslaur/oci-caddy:latest \
 
 ### `update.yaml`
 
-Runs [`melange-update`](./cmd/melange-update) to bump `melange.yaml` to the
-latest upstream GitHub release, then opens a pull request with auto-merge
-enabled.
+Runs [`melange-update`](./cmd/melange-update) to bump `melange.yaml` and the Go
+modules it pins to their latest releases, then opens a pull request on
+`update/<package>` with auto-merge enabled. While that pull request is open,
+later runs update it in place.
 
 ```yaml
 jobs:
@@ -61,7 +62,14 @@ needs:
 
 Reads the upstream repository and tag format from the `git-checkout` step of a
 melange config, and if the latest GitHub release is newer, updates
-`package.version` and `expected-commit` and resets `package.epoch` to 0.
+`package.version` and `expected-commit`.
+
+It also bumps Go modules pinned in pipeline steps with `go get MODULE@VERSION`,
+such as Caddy plugins, to the latest release reported by the Go module proxy.
+This stays within the module's major version and skips prereleases.
+
+`package.epoch` is reset to 0 when the package version changes, and incremented
+when only Go modules change.
 
 ```sh
 GH_TOKEN=$(gh auth token) MELANGE_CONFIG=path/to/melange.yaml go run ./cmd/melange-update
