@@ -2,7 +2,8 @@ name: Build
 
 # Builds the melange package in the caller's melange.yaml for each arch, runs
 # its tests, and optionally publishes the apko.yaml image to
-# ghcr.io/<caller repository> tagged with "latest" and the package version.
+# ghcr.io/<caller repository> tagged with "latest" and the package version,
+# signed keylessly with cosign.
 
 on:
     workflow_call:
@@ -79,6 +80,7 @@ jobs:
         needs: build
         permissions:
             contents: read
+            id-token: write # for keyless signing with cosign
             packages: write
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,9 +121,19 @@ jobs:
                   password: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Build and publish image
+              id: publish
               uses: chainguard-images/actions/apko-publish@8e701b320e7efcb120a1115de26e9fe833f86390 # v1.0.38
               with:
                   config: apko.yaml
                   tag: ${{ steps.tags.outputs.tags }}
                   keyring-append: ./melange.rsa.pub
                   repository-append: ./packages
+
+            - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+            # Signs the image index and each per-arch image by digest. The
+            # signing identity is this reusable workflow, see README.md.
+            - name: Sign image
+              env:
+                  IMAGE: ${{ steps.publish.outputs.digest }}
+              run: cosign sign --yes --recursive "$IMAGE"

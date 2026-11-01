@@ -13,8 +13,9 @@ repositories:
 
 Builds `melange.yaml` for `x86_64` and `aarch64`, runs the package's `test:`
 pipeline, and, when `publish: true`, publishes `apko.yaml` to
-`ghcr.io/<repository>` tagged `latest` and `<package version>`. Scheduled runs
-bypass the package cache so that Wolfi toolchain fixes are picked up.
+`ghcr.io/<repository>` tagged `latest` and `<package version>` and signs it
+with [cosign](https://github.com/sigstore/cosign) keyless signing. Scheduled
+runs bypass the package cache so that Wolfi toolchain fixes are picked up.
 
 ```yaml
 jobs:
@@ -24,7 +25,16 @@ jobs:
             publish: ${{ github.event_name != 'pull_request' }}
 ```
 
-The caller must grant `contents: read` and `packages: write`.
+The caller must grant `contents: read`, `id-token: write` and `packages: write`.
+
+Images are signed by this reusable workflow, so verify them with:
+
+```sh
+cosign verify ghcr.io/pdeslaur/oci-caddy:latest \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/pdeslaur/oci-common/.github/workflows/build.yaml@refs/heads/main \
+    --certificate-github-workflow-repository pdeslaur/oci-caddy
+```
 
 ### `update.yaml`
 
