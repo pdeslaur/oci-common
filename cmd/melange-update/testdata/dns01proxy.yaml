@@ -1,0 +1,66 @@
+package:
+    name: dns01proxy
+    version: "0.1.20"
+    epoch: 0
+    description: Proxy server for ACME DNS-01 challenges
+    copyright:
+        - license: Apache-2.0
+    dependencies:
+        runtime:
+            - ca-certificates-bundle
+
+environment:
+    contents:
+        repositories:
+            - https://packages.wolfi.dev/os
+        keyring:
+            - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+        packages:
+            - busybox
+            - ca-certificates-bundle
+            - go-1.26
+    environment:
+        CGO_ENABLED: "0"
+
+pipeline:
+    - uses: git-checkout
+      with:
+          repository: https://github.com/liujed/dns01proxy
+          tag: v${{package.version}}
+          expected-commit: 335a27ef7083277a7c54065223183ec6f538296c
+
+    - name: Generate all-providers main
+      runs: |
+          mkdir -p ./cmd/all
+          {
+            echo 'package main'
+            echo ''
+            echo 'import ('
+            for p in \
+              acmedns acmeproxy alidns all-inkl arvancloud azure bluecat bunny \
+              cloudflare cloudns conoha desec digitalocean directadmin dnsimple dode \
+              domainnameshop duckdns dynu dynv6 easydns edgeone gandi gcore glesys \
+              godaddy googleclouddns he hetzner httpnet huaweicloud infomaniak inwx \
+              ionos linode loopia luadns mailinabox metaname mijnhost mythicbeasts \
+              namecheap namesilo nanelo netcup netlify netnod nfsn njalla ovh \
+              porkbun powerdns pph regery regfish rfc2136 route53 scaleway servercow \
+              simplydotcom spaceship tecnocratica tencentcloud thelittlehost timeweb \
+              transip unifi volcengine vultr websupport wedos westcn; do
+                echo "	_ \"github.com/caddy-dns/$p\""
+            done
+            echo '	"github.com/liujed/dns01proxy/cmd"'
+            echo ')'
+            echo ''
+            echo 'func main() { cmd.Execute() }'
+          } > ./cmd/all/main.go
+
+    - uses: go/build
+      with:
+          packages: ./cmd/all
+          output: dns01proxy
+          go-package: go-1.26
+          tags: nobadger,nomysql,nopgx
+
+test:
+    pipeline:
+        - runs: /usr/bin/dns01proxy --help

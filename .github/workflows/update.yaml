@@ -1,0 +1,77 @@
+name: Update
+
+# Bumps the caller's melange.yaml to the latest upstream release and opens a
+# pull request with auto-merge enabled.
+#
+# The pull request is created with an octo-sts token rather than GITHUB_TOKEN
+# so that it triggers the caller's PR checks. The caller repository must have
+# a .github/chainguard/update.sts.yaml trust policy granting contents: write
+# and pull_requests: write to this workflow.
+
+on:
+    workflow_call:
+
+permissions: {}
+
+jobs:
+    update:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # for octo-sts
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  repository: pdeslaur/oci-common
+                  ref: main
+                  path: .oci-common
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  go-version-file: .oci-common/go.mod
+                  cache-dependency-path: .oci-common/go.sum
+
+            - name: Check for update and patch melange.yaml
+              id: update
+              working-directory: .oci-common
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  MELANGE_CONFIG: ${{ github.workspace }}/melange.yaml
+              run: go run ./cmd/melange-update
+
+            - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+              if: steps.update.outputs.updated == 'true'
+              id: octo-sts
+              with:
+                  scope: ${{ github.repository }}
+                  identity: update
+
+            - name: Create pull request
+              if: steps.update.outputs.updated == 'true'
+              id: pr
+              uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+              with:
+                  token: ${{ steps.octo-sts.outputs.token }}
+                  add-paths: melange.yaml
+                  branch: update/${{ steps.update.outputs.package }}-${{ steps.update.outputs.latest }}
+                  delete-branch: true
+                  title: "Update ${{ steps.update.outputs.package }} to ${{ steps.update.outputs.tag }}"
+                  commit-message: "melange: update ${{ steps.update.outputs.package }} to ${{ steps.update.outputs.tag }}"
+                  body: |
+                      Automated version bump of ${{ steps.update.outputs.package }} from ${{ steps.update.outputs.current }} to ${{ steps.update.outputs.latest }}.
+
+                      Release notes: ${{ steps.update.outputs.release-url }}
+
+                      Auto-merge is enabled; this will merge once the build checks pass.
+
+            - name: Enable auto-merge
+              if: steps.pr.outputs.pull-request-number != ''
+              env:
+                  GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+                  PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+              run: gh pr merge --auto --squash "$PR_URL"

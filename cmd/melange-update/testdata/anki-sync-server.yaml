@@ -1,0 +1,41 @@
+package:
+    name: anki-sync-server
+    version: "26.09.3"
+    epoch: 0
+    description: Anki sync server
+    copyright:
+        - license: AGPL-3.0-only
+    dependencies:
+        runtime:
+            - ca-certificates-bundle
+
+environment:
+    contents:
+        repositories:
+            - https://packages.wolfi.dev/os
+        keyring:
+            - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+        packages:
+            - busybox
+            - ca-certificates-bundle
+            - rust
+            - protoc
+            - build-base
+
+pipeline:
+    - uses: git-checkout
+      with:
+          repository: https://github.com/ankitects/anki
+          tag: ${{package.version}}
+          expected-commit: 29bb700b951e3f0c0cb69b77c0180fc1fe33e6ba
+          recurse-submodules: true
+
+    - name: Build
+      runs: |
+          export PROTOC=$(find /usr/bin -name 'protoc*' -type f | head -1)
+          cargo install --path rslib/sync --locked --root "${{targets.destdir}}/usr"
+          rm -f "${{targets.destdir}}/usr/.crates.toml" "${{targets.destdir}}/usr/.crates2.json"
+
+test:
+    pipeline:
+        - runs: test -x /usr/bin/anki-sync-server

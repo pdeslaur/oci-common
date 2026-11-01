@@ -1,0 +1,61 @@
+package:
+    name: caddy
+    version: "2.11.7"
+    epoch: 0
+    description: Caddy web server with ACME proxy DNS provider
+    copyright:
+        - license: Apache-2.0
+    dependencies:
+        runtime:
+            - ca-certificates-bundle
+
+environment:
+    contents:
+        repositories:
+            - https://packages.wolfi.dev/os
+        keyring:
+            - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+        packages:
+            - busybox
+            - ca-certificates-bundle
+            - go-1.26
+    environment:
+        CGO_ENABLED: "0"
+
+pipeline:
+    - uses: git-checkout
+      with:
+          repository: https://github.com/caddyserver/caddy
+          tag: v${{package.version}}
+          expected-commit: 72dd0fb067f6d7826c7f79907670ba4a713bfe37
+
+    - name: Add ACME proxy DNS provider and pocketid auth plugin
+      runs: |
+          {
+            echo 'package main'
+            echo ''
+            echo 'import ('
+            echo '	_ "time/tzdata"'
+            echo ''
+            echo '	caddycmd "github.com/caddyserver/caddy/v2/cmd"'
+            echo '	_ "github.com/caddyserver/caddy/v2/modules/standard"'
+            echo '	_ "github.com/caddy-dns/acmeproxy"'
+            echo '	_ "github.com/pdeslaur/caddy-pocketid"'
+            echo ')'
+            echo ''
+            echo 'func main() { caddycmd.Main() }'
+          } > cmd/caddy/main.go
+          go get github.com/caddy-dns/acmeproxy@v1.1.1
+          go get github.com/pdeslaur/caddy-pocketid@v0.1.5
+          go mod tidy
+
+    - uses: go/build
+      with:
+          packages: ./cmd/caddy
+          output: caddy
+          go-package: go-1.26
+          tags: nobadger,nomysql,nopgx
+
+test:
+    pipeline:
+        - runs: /usr/bin/caddy version

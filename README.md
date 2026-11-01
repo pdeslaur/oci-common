@@ -1,0 +1,58 @@
+# oci-common
+
+Shared GitHub Actions workflows and tooling for the melange + apko image
+repositories:
+
+- [oci-caddy](https://github.com/pdeslaur/oci-caddy)
+- [oci-anki-sync](https://github.com/pdeslaur/oci-anki-sync)
+- [oci-dns01proxy](https://github.com/pdeslaur/oci-dns01proxy)
+
+## Workflows
+
+### `build.yaml`
+
+Builds `melange.yaml` for `x86_64` and `aarch64`, runs the package's `test:`
+pipeline, and, when `publish: true`, publishes `apko.yaml` to
+`ghcr.io/<repository>` tagged `latest` and `<package version>`. Scheduled runs
+bypass the package cache so that Wolfi toolchain fixes are picked up.
+
+```yaml
+jobs:
+    build:
+        uses: pdeslaur/oci-common/.github/workflows/build.yaml@main
+        with:
+            publish: ${{ github.event_name != 'pull_request' }}
+```
+
+The caller must grant `contents: read` and `packages: write`.
+
+### `update.yaml`
+
+Runs [`melange-update`](./cmd/melange-update) to bump `melange.yaml` to the
+latest upstream GitHub release, then opens a pull request with auto-merge
+enabled.
+
+```yaml
+jobs:
+    update:
+        uses: pdeslaur/oci-common/.github/workflows/update.yaml@main
+```
+
+The caller must grant `contents: read` and `id-token: write`, and the repository
+needs:
+
+- The [octo-sts](https://github.com/apps/octo-sts) app installed.
+- A `.github/chainguard/update.sts.yaml` trust policy granting
+  `contents: write` and `pull_requests: write` to this workflow.
+- Auto-merge enabled and a ruleset requiring the build checks, so that
+  auto-merge waits for them.
+
+## `melange-update`
+
+Reads the upstream repository and tag format from the `git-checkout` step of a
+melange config, and if the latest GitHub release is newer, updates
+`package.version` and `expected-commit` and resets `package.epoch` to 0.
+
+```sh
+GH_TOKEN=$(gh auth token) MELANGE_CONFIG=path/to/melange.yaml go run ./cmd/melange-update
+```
