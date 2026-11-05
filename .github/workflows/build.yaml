@@ -44,24 +44,28 @@ jobs:
                   path: ./packages
                   key: melange-${{ matrix.arch }}-${{ hashFiles('melange.yaml') }}
 
-            # Stamps the package with the time of the last commit, as Wolfi
-            # does. Without this melange leaves the build date unset, so apko
-            # dates the image by its newest Wolfi dependency instead. A fixed
-            # date also keeps rebuilds of an unchanged config reproducible.
-            - name: Determine package build date
-              id: build-date
+            - uses: chainguard-dev/actions/setup-melange@8f31e9482b447ff2c69eca944a09b4b31a4a85d0 # v1.7.2
               if: steps.cache.outputs.cache-hit != 'true'
-              run: echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
+            # --build-date stamps the package with the time of the last commit,
+            # as Wolfi does. Without it melange leaves the build date unset, so
+            # apko dates the image by its newest Wolfi dependency instead. A
+            # fixed date also keeps rebuilds of an unchanged config
+            # reproducible. melange runs under sudo, which drops
+            # SOURCE_DATE_EPOCH from the environment, hence the flag.
             - name: Build package
               if: steps.cache.outputs.cache-hit != 'true'
-              uses: chainguard-dev/actions/melange-build@8f31e9482b447ff2c69eca944a09b4b31a4a85d0 # v1.7.2
               env:
-                  SOURCE_DATE_EPOCH: ${{ steps.build-date.outputs.epoch }}
-              with:
-                  config: melange.yaml
-                  sign-with-temporary-key: true
-                  archs: ${{ matrix.arch }}
+                  ARCH: ${{ matrix.arch }}
+              run: |
+                  melange keygen melange.rsa
+                  sudo melange build melange.yaml \
+                    --arch "$ARCH" \
+                    --build-date "$(git log -1 --format=%cI)" \
+                    --signing-key melange.rsa \
+                    --source-dir . \
+                    --out-dir ./packages
+                  sudo chown -R runner:runner ./packages
 
             - name: Test package
               if: steps.cache.outputs.cache-hit != 'true'
